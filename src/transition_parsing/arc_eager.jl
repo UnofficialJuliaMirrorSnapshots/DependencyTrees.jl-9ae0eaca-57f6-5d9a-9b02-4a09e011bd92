@@ -8,8 +8,12 @@ See [Nivre 2003](http://stp.lingfil.uu.se/~nivre/docs/iwpt03.pdf),
 """
 struct ArcEager <: AbstractTransitionSystem end
 
-initconfig(s::ArcEager, graph::DependencyTree) = ArcEagerConfig(graph)
-initconfig(s::ArcEager, deptype, words) = ArcEagerConfig{deptype}(words)
+initconfig(::ArcEager, graph::DependencyTree) = ArcEagerConfig(graph)
+initconfig(::ArcEager, deptype, words) = ArcEagerConfig{deptype}(words)
+
+transition_space(::ArcEager, labels=[]) =
+    isempty(labels) ? [LeftArc(), RightArc(), Reduce(), Shift()] :
+    [LeftArc.(labels)..., RightArc.(labels)..., Reduce(), Shift()]
 
 projective_only(::ArcEager) = true
 
@@ -34,8 +38,11 @@ function ArcEagerConfig{T}(gold::DependencyTree) where T
 end
 ArcEagerConfig(gold::DependencyTree) = ArcEagerConfig{eltype(gold)}(gold)
 
-arcs(cfg::ArcEagerConfig) = cfg.A
-deptype(cfg::ArcEagerConfig) = eltype(cfg.A)
+token(cfg::ArcEagerConfig, i) = iszero(i) ? root(deptype(cfg)) :
+                                i == -1   ? noval(deptype(cfg)) :
+                                cfg.A[i]
+tokens(cfg::ArcEagerConfig) = cfg.A
+tokens(cfg::ArcEagerConfig, is) = [token(cfg, i) for i in is if 0 <= i <= length(cfg.A)]
 
 function leftarc(cfg::ArcEagerConfig, args...; kwargs...)
     # Assert a head-dependent relation between the word at the front
@@ -198,6 +205,7 @@ function cost(t::Shift, cfg::ArcEagerConfig, gold)
 end
 
 
-import Base.==
+import Base.==, Base.getindex
 ==(cfg1::ArcEagerConfig, cfg2::ArcEagerConfig) =
     cfg1.σ == cfg2.σ && cfg1.β == cfg2.β && cfg1.A == cfg2.A
+Base.getindex(cfg::ArcEagerConfig, i) = arc(cfg, i)

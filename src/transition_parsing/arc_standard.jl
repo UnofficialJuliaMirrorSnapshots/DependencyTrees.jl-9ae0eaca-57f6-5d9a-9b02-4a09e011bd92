@@ -10,6 +10,10 @@ initconfig(s::ArcStandard, deptype, words) = ArcStandardConfig{deptype}(words)
 
 projective_only(::ArcStandard) = true
 
+transition_space(::ArcStandard, labels=[]) =
+    isempty(labels) ? [LeftArc(), RightArc(), Shift()] :
+    [LeftArc.(labels)..., RightArc.(labels)..., Shift()]
+
 struct ArcStandardConfig{T} <: AbstractParserConfiguration{T}
     σ::Vector{Int}
     β::Vector{Int}
@@ -31,7 +35,11 @@ function ArcStandardConfig{T}(gold::DependencyTree) where T
 end
 ArcStandardConfig(gold::DependencyTree) = ArcStandardConfig{eltype(gold)}(gold)
 
-arcs(cfg::ArcStandardConfig) = cfg.A
+token(cfg::ArcStandardConfig, i) = iszero(i) ? root(deptype(cfg)) :
+                                   i == -1   ? noval(deptype(cfg)) :
+                                   cfg.A[i]
+tokens(cfg::ArcStandardConfig) = cfg.A
+tokens(cfg::ArcStandardConfig, is) = [token(cfg, i) for i in is if 0 <= i <= length(cfg.A)]
 
 function leftarc(cfg::ArcStandardConfig, args...; kwargs...)
     # assert a head-dependent relation between the word at the top of

@@ -50,8 +50,15 @@ function bβ(cfg::Union{ArcEagerConfig,ArcHybridConfig})
     return (b, β)
 end
 
+leftdeps(cfg::AbstractParserConfiguration, dep::Dependency) = leftdeps(cfg, id(dep))
+leftdeps(cfg::AbstractParserConfiguration, i::Int) =
+    filter(t -> id(t) > i && head(t) == i, tokens(cfg))
+
+leftmostdep(cfg::AbstractParserConfiguration, dep::Dependency, n::Int=1) =
+    leftmostdep(cfg, id(dep), n)
+
 function leftmostdep(cfg::AbstractParserConfiguration, i::Int, n::Int=1)
-    A = arcs(cfg)
+    A = tokens(cfg)
     ldep = leftmostdep(A, i, n)
     if iszero(ldep)
         root(eltype(A))
@@ -62,11 +69,15 @@ function leftmostdep(cfg::AbstractParserConfiguration, i::Int, n::Int=1)
     end
 end
 
-leftmostdep(cfg::AbstractParserConfiguration, dep::Dependency, n::Int=1) =
-    leftmostdep(cfg, id(dep), n)
-    
+rightdeps(cfg::AbstractParserConfiguration, dep::Dependency) = rightdeps(cfg, id(dep))
+rightdeps(cfg::AbstractParserConfiguration, i::Int) =
+    filter(t -> id(t) > i && head(t) == i, tokens(cfg))
+
+rightmostdep(cfg::AbstractParserConfiguration, dep::Dependency, n::Int=1) =
+    rightmostdep(cfg, id(dep))
+
 function rightmostdep(cfg::AbstractParserConfiguration, i::Int, n::Int=1)
-    A = arcs(cfg)
+    A = tokens(cfg)
     rdep = rightmostdep(A, i, n)
     if iszero(rdep)
         root(eltype(A))
@@ -76,6 +87,3 @@ function rightmostdep(cfg::AbstractParserConfiguration, i::Int, n::Int=1)
         A[rdep]
     end
 end
-
-rightmostdep(cfg::AbstractParserConfiguration, dep::Dependency, n::Int=1) =
-    rightmostdep(cfg, id(dep))

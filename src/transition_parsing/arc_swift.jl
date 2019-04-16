@@ -10,6 +10,12 @@ struct ArcSwift <: AbstractTransitionSystem end
 initconfig(s::ArcSwift, graph::DependencyTree) = ArcSwiftConfig(graph)
 initconfig(s::ArcSwift, deptype, words) = ArcSwiftConfig{deptype}(words)
 
+transition_space(::ArcSwift, labels=[]; max_k=5) =
+    isempty(labels) ? [LeftArc.(1:max_k)..., RightArc.(1:max_k)..., Shift()] :
+    [[LeftArc(k, l) for k in 1:max_k for l in labels]...,
+     [RightArc(k, l) for k in 1:max_k for l in labels]...,
+     Shift()]
+
 projective_only(::ArcSwift) = true
 
 struct ArcSwiftConfig{T} <: AbstractParserConfiguration{T}
@@ -33,7 +39,11 @@ function ArcSwiftConfig{T}(gold::DependencyTree) where T
 end
 ArcSwiftConfig(gold::DependencyTree) = ArcSwiftConfig{eltype(gold)}(gold)
 
-arcs(cfg::ArcSwiftConfig) = cfg.A
+token(cfg::ArcSwiftConfig, i) = iszero(i) ? root(deptype(cfg)) :
+                                i == -1   ? noval(deptype(cfg)) :
+                                cfg.A[i]
+tokens(cfg::ArcSwiftConfig) = cfg.A
+tokens(cfg::ArcSwiftConfig, is) = [token(cfg, i) for i in is if 0 <= i <= length(cfg.A)]
 
 function leftarc(cfg::ArcSwiftConfig, k::Int, args...; kwargs...)
     # Assert a head-dependent relation between the word at the front

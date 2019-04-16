@@ -8,10 +8,14 @@ Described in [Kuhlmann et al, 2011](https://www.aclweb.org/anthology/P/P11/P11-1
 """
 struct ArcHybrid <: AbstractTransitionSystem end
 
-initconfig(s::ArcHybrid, graph::DependencyTree) = ArcHybridConfig(graph)
-initconfig(s::ArcHybrid, deptype, words) = ArcHybridConfig{deptype}(words)
+initconfig(::ArcHybrid, graph::DependencyTree) = ArcHybridConfig(graph)
+initconfig(::ArcHybrid, deptype, words) = ArcHybridConfig{deptype}(words)
 
 projective_only(::ArcHybrid) = true
+
+transition_space(::ArcHybrid, labels=[]) =
+    isempty(labels) ? [LeftArc(), RightArc(), Shift()] :
+    [LeftArc.(labels)..., RightArc.(labels)..., Shift()]
 
 struct ArcHybridConfig{T} <: AbstractParserConfiguration{T}
     σ::Vector{Int}
@@ -34,8 +38,11 @@ function ArcHybridConfig{T}(gold::DependencyTree) where T
 end
 ArcHybridConfig(gold::DependencyTree) = ArcHybridConfig{eltype(gold)}(gold)
 
-arcs(cfg::ArcHybridConfig) = cfg.A
-deptype(cfg::ArcHybridConfig) = eltype(cfg.A)
+token(cfg::ArcHybridConfig, i) = iszero(i) ? root(deptype(cfg)) :
+                                 i == -1   ? noval(deptype(cfg)) :
+                                 cfg.A[i]
+tokens(cfg::ArcHybridConfig) = cfg.A
+tokens(cfg::ArcHybridConfig, is) = [token(cfg, i) for i in is if 0 <= i <= length(cfg.A)]
 
 # get σ|s0 as (σ, s0)
 function σs0(cfg::ArcHybridConfig)
