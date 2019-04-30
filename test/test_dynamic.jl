@@ -87,6 +87,29 @@ using DependencyTrees: TreebankReader
         @test length(collect(tb)) == 1
         @test length(DependencyTrees.xys(oracle, tb)) == 0
     end
+
+    @testset "Dynamic Iteration" begin
+        oracle = DynamicOracle(ArcHybrid(), transition=DependencyTrees.untyped)
+        tb = Treebank{CoNLLU}(joinpath(@__DIR__, "data", "hybridtests.conll"))
+
+        for tree in treebank
+            for (cfg, G) in DependencyTrees.xys(oracle, tree)
+                @test cfg isa DependencyTrees.ArcHybridConfig
+                for t in G
+                    T = typeof(t)
+                    @test T <: DependencyTrees.LeftArc || T <: DependencyTrees.RightArc || T <: DependencyTrees.Shift
+                end
+            end
+
+            for state in DependencyTrees.DynamicGoldSearch(oracle, tree)
+                @test state.G ⊆ state.A
+                t, next = DependencyTrees.explore(state)
+                @test t(state.cfg) == next == DependencyTrees.next_state(state, t)
+                @test t in state.A
+                @test DependencyTrees.explore(state, t) == (t, next)
+            end
+        end
+    end
 end
 
 @testset "Transition Output Spaces" begin
@@ -122,4 +145,14 @@ end
     @test transition_space(ListBasedNonProjective(), ["a","b"]) == [LeftArc("a"), LeftArc("b"),
                                                                     RightArc("a"), RightArc("b"),
                                                                     NoArc(), Shift()]
+end
+
+@testset "Exploration Policies" begin
+    using DependencyTrees: AlwaysExplore, NeverExplore, ExplorationPolicy
+    always1, never1 = AlwaysExplore(), NeverExplore()
+    always2, never2 = ExplorationPolicy(0,1), ExplorationPolicy(0,0)
+    for i = 1:10
+        @test always1(i) == always2(i) == true
+        @test never1(i)  == never2(i)  == false
+    end
 end
