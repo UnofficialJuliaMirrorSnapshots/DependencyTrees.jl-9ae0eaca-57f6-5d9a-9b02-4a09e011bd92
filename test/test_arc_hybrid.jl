@@ -1,34 +1,38 @@
-using DependencyTrees: xys
-
 @testset "Arc-Hybrid" begin
 
-    tb = Treebank{CoNLLU}(joinpath(@__DIR__, "data", "hybridtests.conll"))
+    @test showstr(LeftArc()) == "LeftArc()"
+    @test showstr(LeftArc("mod")) == "LeftArc(mod)"
+    for t in [LeftArc(), RightArc(), Shift()]
+        @test isempty(DependencyTrees.args(t)) && isempty(DependencyTrees.kwargs(t))
+    end
+    for t in [LeftArc("label"), RightArc("label")]
+        @test !isempty(DependencyTrees.args(t)) && isempty(DependencyTrees.kwargs(t))
+    end
+
+    AH = ArcHybrid()
+
+    tb = test_treebank("hybridtests.conll")
+
     trees = collect(tb)
     @test length(trees) == 4
     @test length.(trees) == [6, 6, 9, 18]
 
-    @test DependencyTrees.projective_only(ArcHybrid())
+    @test DT.projective_only(ArcHybrid())
 
     t1 = first(trees)
-    using DependencyTrees: initconfig
-    c1,c2 = initconfig(ArcHybrid(), CoNLLU, [t.form for t in t1]), initconfig(ArcHybrid(), t1)
-    @test [t.form for t in c1.A] == [t.form for t in c2.A]
-
+    c1,c2 = initconfig(AH, CoNLLU, [t.form for t in t1]), initconfig(AH, t1)
+    @test [t.form for t in tokens(c1)] == [t.form for t in tokens(c2)]
 
     @testset "Static Oracle" begin
-        oracle = StaticOracle(ArcHybrid())
+        oracle = StaticOracle(AH, arc=typed)
         model(x) = nothing
         errorcb(x, ŷ, y) = nothing
-
-        trainer = OnlineTrainer(oracle, model, identity, errorcb)
-
-        DependencyTrees.train!(trainer, tb)
 
         function test_oracle(gold)
             gold_xys = collect(xys(oracle, gold))
             cfg, t = last(gold_xys)
             cfg = t(cfg)
-            graph = DependencyTree(cfg.A)
+            graph = DependencyTree(tokens(cfg))
             @test all(enumerate(graph)) do (i, token)
                 g = gold[i]
                 token.form == g.form && token.deprel == g.deprel && token.head == g.head
@@ -70,25 +74,16 @@ using DependencyTrees: xys
     end
 
     @testset "Dynamic Oracle" begin
-        TS = Union{DependencyTrees.LeftArc, DependencyTrees.RightArc, DependencyTrees.Shift}
-        oracle = DynamicOracle(ArcHybrid())
+        TS = Union{LeftArc, RightArc, Shift}
+        oracle = DynamicOracle(ArcHybrid(), arc=typed)
         model(x) = Shift()
         function errorcb(x, ŷ, y)
-            @test typeof(x) <: DependencyTrees.ArcHybridConfig && typeof(y) <: TS
+            @test typeof(x) <: DT.Parse.ArcHybridConfig && typeof(y) <: TS
             @test ŷ == Shift()
             @test typeof(y) <: Union{Shift, LeftArc, RightArc}
         end
-        trainer = OnlineTrainer(oracle, model, identity, errorcb)
-        for tree in tb
-            DependencyTrees.train!(trainer, tree)
-        end
     end
 
-    function showstr(op)
-        buf = IOBuffer()
-        show(buf, op)
-        return String(take!(buf))
-    end
     @test showstr(Shift()) == "Shift()"
     @test showstr(Reduce()) == "Reduce()"
     @test showstr(LeftArc()) == "LeftArc()"

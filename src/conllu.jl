@@ -1,6 +1,9 @@
 """
     CoNLLU
 
+CoNLLU token in a dependency tree.
+
+See [https://universaldependencies.org/format.html](https://universaldependencies.org/format.html).
 """
 struct CoNLLU <: Dependency
     "id: Word index, integer starting at 1 for each new sentence; may be a range for multiword tokens; may be a decimal number for empty nodes."
@@ -83,7 +86,7 @@ dep(d::CoNLLU; lemma=lemma(d), upos=upos(d), xpos=xpos(d), feats=feats(d),
 
 hashead(d::CoNLLU) = d.head >= 0
 
-noval(::Type{CoNLLU}) = CoNLLU(0,NOVAL,NOVAL,NOVAL,NOVAL,String[],-1,NOVAL,Tuple{Int,String}[],NOVAL)
+noval(::Type{CoNLLU}) = CoNLLU(-1,NOVAL,NOVAL,NOVAL,NOVAL,String[],-1,NOVAL,Tuple{Int,String}[],NOVAL)
 root(::Type{CoNLLU}) = CoNLLU(0,ROOT,ROOT,ROOT,ROOT,String[],0,ROOT,Tuple{Int,String}[],ROOT)
 isroot(d::CoNLLU) = d.id == 0 && d.form == ROOT
 
@@ -100,7 +103,8 @@ function toconllu(d::CoNLLU)
     join([id, form, lemma, upos, xpos, feats, head, deprel, deps, misc], "\t")*"\n"
 end
 
-import Base.==
+Base.show(io::IO, d::CoNLLU) = print(io, toconllu(d))
+
 ==(d1::CoNLLU, d2::CoNLLU) =
     all([d1.id == d2.id, d1.form == d2.form, d1.lemma == d2.lemma,
           d1.upos == d2.upos, d1.xpos == d2.xpos, d1.feats == d2.feats,

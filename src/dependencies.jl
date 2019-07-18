@@ -1,9 +1,3 @@
-"""
-    Dependency
-
-Abstract type defining a dependency relation between
-two words in a sentence.
-"""
 abstract type Dependency end
 
 _ni(f, dep) = error("$f not implemented for type $(typeof(dep))!")
@@ -22,51 +16,34 @@ unk(t::Type{<:Dependency}) = _ni(unk, t)
 const ROOT = "ROOT"
 const NOVAL = "NOVAL"
 
-leftdeps(arcs::Vector, i::Int) = filter(d -> d < i, dependents(g, i))
-rightdeps(arcs::Vector, i::Int) = filter(d -> d > i, dependents(g, i))
+leftdeps(tokens::AbstractVector, i::Int) =
+    id.(filter(t -> id(t) < i && head(t) == i, tokens))
 
-leftdeps(arcs::Vector, dep::Dependency) =
-    [arcs[i] for i in leftsdeps(arcs, id(dep))]
+leftdeps(tokens::AbstractVector, dep::Dependency) =
+    filter(t -> id(t) < id(dep) && head(t) == id(dep), tokens)
 
-rightdeps(arcs::Vector, dep::Dependency) =
-    [arcs[i] for i in rightsdeps(arcs, id(dep))]
+rightdeps(tokens::AbstractVector, i::Int) =
+    id.(filter(t -> id(t) > i && head(t) == i, tokens))
 
-function leftmostdep(arcs::Vector, i::Int, n::Int=1, notfound::Int=-1)
-    deps = filter(a -> i > id(a) && hashead(a) && head(a) == i, arcs)
-    if length(deps) < n
-        notfound
-    else
-        id(deps[n])
-    end
+rightdeps(tokens::AbstractVector, dep::Dependency) =
+    filter(t -> id(t) > id(dep) && head(t) == id(dep), tokens)
+
+function leftmostdep(tokens::AbstractVector, i::Int, n::Int=1, notfound::Int=-1)
+    deps = filter(a -> i > id(a) && hashead(a) && head(a) == i, tokens)
+    return length(deps) < n ? notfound : id(deps[n])
 end
-function leftmostdep(arcs::Vector, dep::Dependency, n::Int=1)
-    ldep = leftmostdep(arcs, id(dep), n)
-    if iszero(ldep)
-        root(eltype(arcs))
-    elseif ldep == -1
-        noval(eltype(arcs))
-    else
-        arcs[ldep]
-    end
+function leftmostdep(tokens::AbstractVector, dep::Dependency, n::Int=1)
+    ldep = leftmostdep(tokens, id(dep), n)
+    return ldep == -1 ? noval(eltype(tokens)) : tokens[ldep]
 end
 
-function rightmostdep(arcs::Vector, i::Int, n::Int=1, notfound::Int=-1)
-    deps = filter(a -> i < id(a) && hashead(a) && head(a) == i, arcs)
-    if length(deps) < n
-        notfound
-    else
-        id(deps[end-n+1])
-    end
+function rightmostdep(tokens::AbstractVector, i::Int, n::Int=1, notfound::Int=-1)
+    deps = filter(a -> i < id(a) && hashead(a) && head(a) == i, tokens)
+    return length(deps) < n ? notfound : id(deps[end-n+1])
 end
-function rightmostdep(arcs::Vector, dep::Dependency, n::Int=1)
-    rdep = rightmostdep(arcs, id(dep), n)
-    if iszero(rdep)
-        root(eltype(arcs))
-    elseif rdep == -1
-        noval(eltype(arcs))
-    else
-        arcs[rdep]
-    end
+function rightmostdep(tokens::AbstractVector, dep::Dependency, n::Int=1)
+    rdep = rightmostdep(tokens, id(dep), n)
+    return rdep == -1 ? noval(eltype(tokens)) : tokens[rdep]
 end
 
 
@@ -134,7 +111,6 @@ toconllu(d::UntypedDependency) =
 
 unk(::Type{UntypedDependency}, id, word) = UntypedDependency(id, word, -1)
 
-import Base.==
 ==(d1::UntypedDependency, d2::UntypedDependency) =
     d1.id == d2.id && d1.form == d2.form && d1.head == d2.head
 
@@ -187,7 +163,6 @@ toconllu(d::TypedDependency) =
 
 unk(::Type{TypedDependency}, id, word) = TypedDependency(id, word, undef, -1)
 
-import Base.==
 ==(d1::TypedDependency, d2::TypedDependency) =
     all([d1.id == d2.id, d1.form == d2.form,
          d1.deprel == d2.deprel, d1.head == d2.head])

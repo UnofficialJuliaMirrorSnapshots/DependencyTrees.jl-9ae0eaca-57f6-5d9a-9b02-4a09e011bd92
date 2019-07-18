@@ -1,23 +1,15 @@
-"""
-    TreebankReader{Dependency}
-
-Read trees lazily from a single file.
-"""
+# read trees lazily from a single file
 mutable struct TreebankReader{T<:Dependency}
     io::IO
     lineno::Int
     comment_rx::Regex
     add_id::Bool
-    kwargs
+    allow_nonprojective::Bool
+    allow_multiheaded::Bool
 end
 
-function TreebankReader{T}(file::String; comment_rx=r"^#", add_id=false, kwargs...) where T
-    TreebankReader{T}(open(file), 0, comment_rx, add_id, kwargs)
-end
-
-function TreebankReader{T}(io::IO; comment_rx=r"^#", kwargs...) where T
-    TreebankReader{T}(io, 0, comment_rx, add_id, kwargs)
-end
+TreebankReader{T}(file::String; comment_rx=r"^#", add_id=false, allow_nonprojective=true, allow_multiheaded=true) where T =
+    TreebankReader{T}(open(file), 0, comment_rx, add_id, allow_nonprojective, allow_multiheaded)
 
 Base.iterate(t::TreebankReader) = iterate(t, 1)
 
@@ -33,16 +25,13 @@ function Base.iterate(t::TreebankReader, state)
             !newl ? (newl = true) : break
         else
             try
-                tok = t.add_id ? T(length(tokens) + 1, String(line); t.kwargs...) :
-                                 T(String(line); t.kwargs...)
-                push!(tokens, tok)
+                token = t.add_id ? T(length(tokens) + 1, String(line)) :
+                                   T(String(line))
+                push!(tokens, token)
             catch err
-                if isa(err, MultiWordTokenError)
-                    push!(mwts, MultiWordToken(line))
-                elseif isa(err, EmptyTokenError)
-                    push!(emptytokens, EmptyToken(line))
-                end
-                continue
+                isa(err, MultiWordTokenError) ? push!(mwts, MultiWordToken(line)) :
+                isa(err, EmptyTokenError)     ? push!(emptytokens, EmptyToken(line)) :
+                throw(err)
             end
         end
     end
@@ -52,7 +41,8 @@ function Base.iterate(t::TreebankReader, state)
         return nothing
     else
         try
-            g = DependencyTree(tokens; mwts=mwts, emptytokens=emptytokens, t.kwargs...)
+            kwargs = (check_single_head = t.allow_multiheaded ? false : true,)
+            g = DependencyTree(tokens; mwts=mwts, emptytokens=emptytokens, kwargs...)
             return (g, state)
         catch err
             if isa(err, GraphConnectivityError)

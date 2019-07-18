@@ -1,32 +1,25 @@
 @testset "CoNLL-U" begin
 
-    corpus_file = joinpath(@__DIR__, "data", "english.conllu")
+    trees = collect(test_treebank("english.conllu"))
 
-    trees = DependencyTrees.TreebankReader{CoNLLU}(corpus_file) |> collect
     @test length(trees) == 2
     @test length.(trees) == [7, 19]
 
     for C in [ArcStandard(), ArcEager(), ListBasedNonProjective()], tree in trees
         tokens = form.(tree)
         oracle = StaticOracle(C)
-
-        # parsed =  DependencyTrees.parse(C{CoNLLU}, tokens, oracle)
-        
-        # @test length(tree) == length(parsed)
-        # for (i, gold_node) in enumerate(tree)
-        #     @test deprel(parsed, i) == deprel(gold_node)
-        # end
     end
 
     for C in [ArcEager(), ArcHybrid()]
-        oracle = StaticOracle(C, transition = DependencyTrees.untyped)
+        oracle = StaticOracle(C, arc = untyped)
         for (cfg, t) in DependencyTrees.xys(oracle, trees)
-            @test DependencyTrees.args(t) == ()
+            @test DT.args(t) == ()
         end
     end
 
+    @test DependencyTrees.noval(CoNLLU).head == -1
+
     # make sure the errors get thrown correctly
-    using DependencyTrees: MultiWordTokenError, EmptyTokenError
     @test_throws MultiWordTokenError CoNLLU("18-19	cannot	_	_	_	_	_	_	_	SpaceAfter=No")
     @test_throws EmptyTokenError CoNLLU("0.1	nothing	_	_	_	_	_	_	_	_")
 
@@ -35,7 +28,6 @@
 
     @test_throws Exception CoNLLU("1	2	3")
 
-    #
     sent = """
 1	They	they	PRON	PRP	Case=Nom|Number=Plur	2	nsubj	2:nsubj|4:nsubj	_
 2	buy	buy	VERB	VBP	Number=Plur|Person=3|Tense=Pres	0	root	0:root	_
@@ -46,8 +38,12 @@
 
     graph = DependencyTree{CoNLLU}(sent)
     for d in graph.tokens
-        @test DependencyTrees.untyped(d) == ()
-        @test DependencyTrees.typed(d) == (d.deprel,)
+        @test untyped(d) == ()
+        @test typed(d) == (d.deprel,)
+    end
+    @test startswith(showstr(graph), "DependencyTree{CoNLLU}\n1\tThey")
+    for (i, tok) in enumerate(tokens(graph))
+        @test startswith(showstr(tok), string(tok.id))
     end
 
     c = CoNLLU("1	They	they	PRON	PRP	Case=Nom|Number=Plur	2	nsubj	2:nsubj|4:nsubj	_")

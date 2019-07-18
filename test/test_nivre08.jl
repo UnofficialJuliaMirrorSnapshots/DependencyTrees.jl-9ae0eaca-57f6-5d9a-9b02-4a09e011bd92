@@ -1,151 +1,114 @@
-using DependencyTrees: shift, leftarc, rightarc
-using DependencyTrees: OnlineTrainer
-
-# tests from nivre 08 "algorithms for deterministic incremental
-# dependency parsing"
-
 @testset "Nivre 08" begin
 
-    error_cb(args...) = error("dependency parse error")
+    # See paper:
+    # Nivre, 2008: "Algorithms for Deterministic Incremental Dependency Parsing"
+    # https://www.aclweb.org/anthology/J08-4003.pdf
 
-    # multi-headed czech sentence from universal dependencies treebank
-    # ("Only one of them concerns quality.")
-    figure_1_sent = [("Z", "AuxP", 5),      # out-of
-                     ("nich", "Atr", 1),    # them
-                     ("je", "Pred", 0),     # is
-                     ("jen", "AuxZ", 5),    # only
-                     ("jedna", "Sb", 3),    # one-FEM-SG
-                     ("na", "AuxP", 3),     # to
-                     ("kvalitu", "Adv", 6), # quality
-                     (".", "AuxK", 0)]      # .
-
-    figure_2_sent = [
-        ("Economic", "NMOD", 2),
-        ("news", "SUBJ", 3),
-        ("had", "ROOT", 0),
-        ("little", "NMOD", 5),
-        ("effect", "OBJ", 3),
-        ("on", "NMOD", 5),
-        ("financial", "NMOD", 8),
-        ("markets", "PMOD", 6),
-        (".", "P", 3),
-    ]
+    tree_fig1, tree_fig2 = test_treebank("nivre08.conll")
 
     @testset "Figure 6" begin
-        graph = DependencyTree(TypedDependency, figure_2_sent, add_id=true)
+        # arc-eager parse for "economic news had little effect on financial markets"
+        table = [
+            # Transition      Stack        Buffer
+            (Shift(),         [0,1],       2:9),
+            (LeftArc("NMOD"), [0],         2:9),
+            (Shift(),         [0,2],       3:9),
+            (LeftArc("SUBJ"), [0],         3:9),
+            (RightArc("ROOT"),[0,3],       4:9),
+            (Shift(),         [0,3,4],     5:9),
+            (LeftArc("NMOD"), [0,3],       5:9),
+            (RightArc("OBJ"), [0,3,5],     6:9),
+            (RightArc("NMOD"),[0,3,5,6],   7:9),
+            (Shift(),         [0,3,5,6,7], 8:9),
+            (LeftArc("NMOD"), [0,3,5,6],   8:9),
+            (RightArc("PMOD"),[0,3,5,6,8], [9]),
+            (Reduce(),        [0,3,5,6],   [9]),
+            (Reduce(),        [0,3,5],     [9]),
+            (Reduce(),        [0,3],       [9]),
+            (RightArc("P"),   [0,3,9],     [])]
 
-        words = first.(figure_2_sent)
-        config = DependencyTrees.initconfig(ArcEager(), TypedDependency, first.(figure_2_sent))
-        @test config.σ == [0]
-        @test config.β == 1:9
-        config = shift(config)
-        config = leftarc(config, "NMOD")
-        config = shift(config)
-        config = leftarc(config, "SUBJ")
-        config = rightarc(config, "ROOT")
-        config = shift(config)
-        config = leftarc(config, "NMOD")
-        config = rightarc(config, "OBJ")
-        config = rightarc(config, "NMOD")
-        config = shift(config)
-        config = leftarc(config, "NMOD")
-        config = rightarc(config, "PMOD")
-        config = reduce(config)
-        config = reduce(config)
-        config = reduce(config)
-        config = rightarc(config, "P")
-        @test isfinal(config)
-
-        oracle = DependencyTrees.static_oracle(ArcEager(), graph)
-        config = DependencyTrees.initconfig(ArcEager(), TypedDependency, first.(figure_2_sent))
-        gold_transitions = [Shift(),
-                            LeftArc("NMOD"),
-                            Shift(),
-                            LeftArc("SUBJ"),
-                            RightArc("ROOT"),
-                            Shift(),
-                            LeftArc("NMOD"),
-                            RightArc("OBJ"),
-                            RightArc("NMOD"),
-                            Shift(),
-                            LeftArc("NMOD"),
-                            RightArc("PMOD"),
-                            Reduce(),
-                            Reduce(),
-                            Reduce(),
-                            RightArc("P")]
-        for t in gold_transitions
-            @test oracle(config) == t
-            config = t(config)
+        cfg = initconfig(ArcEager(), tree_fig2)
+        o = cfg -> static_oracle(cfg, tree_fig2, typed)
+        @test stack(cfg) == [0]
+        @test buffer(cfg) == 1:9
+        for (t, stk, buf) in table
+            @test !isfinal(cfg)
+            @test t == o(cfg)
+            cfg = t(cfg)
+            @test stack(cfg) == stk
+            @test buffer(cfg) == buf
         end
-        graph2 = DependencyTree(config.A)
-        @test graph == graph2
-
-        # trainer = OnlineTrainer(StaticOracle(ArcEager{TypedDependency}), oracle, identity, error_cb)
-        # train!(trainer, graph)
+        @test isfinal(cfg)
+        result = DependencyTree(tokens(cfg))
+        @test result == tree_fig2
     end
 
     @testset "Figure 8" begin
+        @test !projective_only(ListBasedNonProjective())
+        table = [
+            # Transition        L1       L2     buffer
+            (Shift(),           [0,1],   [],    2:8),
+            (RightArc("Atr"),   [0],     [1],   2:8),
+            (Shift(),           [0,1,2], [],    3:8),
+            (NoArc(),           [0,1],   [2],   3:8),
+            (NoArc(),           [0],     [1,2], 3:8),
+            (RightArc("Pred"),  [],      0:2,   3:8),
+            (Shift(),           0:3,     [],    4:8),
+            (Shift(),           0:4,     [],    5:8),
+            (LeftArc("AuxZ"),   0:3,     [4],   5:8),
+            (RightArc("Sb"),    0:2,     3:4,   5:8),
+            (NoArc(),           0:1,     2:4,   5:8),
+            (LeftArc("AuxP"),   [0],     1:4,   5:8),
+            (Shift(),           0:5,     [],    6:8),
+            (NoArc(),           0:4,     [5],   6:8),
+            (NoArc(),           0:3,     4:5,   6:8),
+            (RightArc("AuxP"),  0:2,     3:5,   6:8),
+            (Shift(),           0:6,     [],    7:8),
+            (RightArc("Adv"),   0:5,     [6],   7:8),
+            (Shift(),           0:7,     [],    [8]),
+            (NoArc(),           0:6,     [7],   [8]),
+            (NoArc(),           0:5,     6:7,   [8]),
+            (NoArc(),           0:4,     5:7,   [8]),
+            (NoArc(),           0:3,     4:7,   [8]),
+            (NoArc(),           0:2,     3:7,   [8]),
+            (NoArc(),           0:1,     2:7,   [8]),
+            (NoArc(),           [0],     1:7,   [8]),
+            (RightArc("AuxK"),  [],      0:7,   [8]),
+            (Shift(),           0:8,     [],    [])]
 
-        using DependencyTrees: MultipleRootsError, ListBasedNonProjective
-        using DependencyTrees: NoArc
-        using DependencyTrees: isfinal
-
-        @test_throws MultipleRootsError DependencyTree(TypedDependency, figure_1_sent, add_id=true)
-        graph = DependencyTree(TypedDependency, figure_1_sent; add_id=true, check_single_head=false)
-        words = form.(graph)
-
-        oracle = DependencyTrees.static_oracle(ListBasedNonProjective(), graph)
-
-        @test ! DependencyTrees.projective_only(ListBasedNonProjective())
-
-        cfg = DependencyTrees.initconfig(ListBasedNonProjective(), TypedDependency, words)
-        gold_transitions = [Shift(),
-                            RightArc("Atr"),
-                            Shift(),
-                            NoArc(),
-                            NoArc(),
-                            RightArc("Pred"),
-                            Shift(),
-                            Shift(),
-                            LeftArc("AuxZ"),
-                            RightArc("Sb"),
-                            NoArc(),
-                            LeftArc("AuxP"),
-                            Shift(),
-                            NoArc(),
-                            NoArc(),
-                            RightArc("AuxP"),
-                            Shift(),
-                            RightArc("Adv"),
-                            Shift(),
-                            NoArc(),
-                            NoArc(),
-                            NoArc(),
-                            NoArc(),
-                            NoArc(),
-                            NoArc(),
-                            NoArc(),
-                            RightArc("AuxK"),
-                            Shift()]
-        for t in gold_transitions
+        o(cfg) = static_oracle(cfg, tree_fig1, typed)
+        cfg = initconfig(ListBasedNonProjective(), tree_fig1)
+        for (t, l1, l2, buf) in table
             @test !isfinal(cfg)
-            t̂ = oracle(cfg)
-            @test t̂ == t
-            @test t̂(cfg) == t(cfg)
+            @test o(cfg) == t
             cfg = t(cfg) 
+            @test cfg.λ1 == l1
+            @test cfg.λ2 == l2
+            @test buffer(cfg) == buf
         end
         @test isfinal(cfg)
-        graph2 = DependencyTree(cfg.A, check_single_head=false)
-        @test graph2 == graph
+        @test replace(showstr(cfg), r"\s+"=>"") ==
+            """ListBasedNonProjectiveConfig([0,1,2,3,4,5,6,7,8],[],[])
+             1	Z	5
+             2	nich	1
+             3	je	0
+             4	jen	5
+             5	jedna	3
+             6	na	3
+             7	kvalitu	6
+             8	.	0""" |> x->replace(x, r"\s"=>"")
 
-        o = StaticOracle(ListBasedNonProjective())
-        pairs = DependencyTrees.xys(o, graph)
-        @test last.(pairs) == gold_transitions
-        trainer = OnlineTrainer(o, oracle, identity, error_cb)
-        train!(trainer, graph)
+        result = DependencyTree(cfg.A, check_single_head=false)
+        @test result == tree_fig1
 
-        c = DependencyTrees.initconfig(ListBasedNonProjective(), graph)
-        @test DependencyTrees.deptype(c) == TypedDependency
+        oracle = StaticOracle(ListBasedNonProjective(), arc=typed)
+        pairs = DependencyTrees.xys(oracle, tree_fig1)
+        @test last.(pairs) == first.(table)
+
+        cfg1 = initconfig(ListBasedNonProjective(), CoNLLU, [w.form for w in tree_fig1])
+        cfg2 = initconfig(ListBasedNonProjective(), tree_fig1)
+        @test cfg1 != cfg2 # cfg2 knows about the gold labels, cfg1 doesn't
+        @test cfg1.λ1 == cfg2.λ1 && cfg1.λ2 == cfg2.λ2 && cfg1.β == cfg2.β
+        @test [token(cfg, 1)] == tokens(cfg, [1])
     end
 end

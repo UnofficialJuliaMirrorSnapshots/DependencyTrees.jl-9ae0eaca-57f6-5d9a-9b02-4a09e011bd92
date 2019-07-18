@@ -1,5 +1,5 @@
 """
-    ArcSwift
+    ArcSwift()
 
 Parser configuration for arc-swift dependency parsing.
 
@@ -7,8 +7,8 @@ Described in [Qi & Manning 2017](https://nlp.stanford.edu/pubs/qi2017arcswift.pd
 """
 struct ArcSwift <: AbstractTransitionSystem end
 
-initconfig(s::ArcSwift, graph::DependencyTree) = ArcSwiftConfig(graph)
-initconfig(s::ArcSwift, deptype, words) = ArcSwiftConfig{deptype}(words)
+initconfig(::ArcSwift, graph::DependencyTree) = ArcSwiftConfig(graph)
+initconfig(::ArcSwift, deptype, words) = ArcSwiftConfig{deptype}(words)
 
 transition_space(::ArcSwift, labels=[]; max_k=5) =
     isempty(labels) ? [LeftArc.(1:max_k)..., RightArc.(1:max_k)..., Shift()] :
@@ -27,7 +27,7 @@ end
 function ArcSwiftConfig{T}(words) where T
     σ = [0]
     β = collect(1:length(words))
-    A = [unk(T, id, w) for (id,w) in enumerate(words)]
+    A = [unk(T, id, w) for (id, w) in enumerate(words)]
     ArcSwiftConfig{T}(σ, β, A)
 end
 
@@ -38,6 +38,9 @@ function ArcSwiftConfig{T}(gold::DependencyTree) where T
     ArcSwiftConfig{T}(σ, β, A)
 end
 ArcSwiftConfig(gold::DependencyTree) = ArcSwiftConfig{eltype(gold)}(gold)
+
+stack(cfg::ArcSwiftConfig)  = cfg.σ
+buffer(cfg::ArcSwiftConfig) = cfg.β
 
 token(cfg::ArcSwiftConfig, i) = iszero(i) ? root(deptype(cfg)) :
                                 i == -1   ? noval(deptype(cfg)) :
@@ -87,28 +90,32 @@ operations from a parser configuration with reference to `graph`.
 
 Described in [Qi & Manning 2017](https://nlp.stanford.edu/pubs/qi2017arcswift.pdf).
 """
-function static_oracle(::ArcSwift, graph::DependencyTree, tr = typed)
-    args(i) = tr(graph[i])
-
-    function (cfg::ArcSwiftConfig)
-        S = length(cfg.σ)
-        if S >= 1 && length(cfg.β) >= 1
-            b = cfg.β[1]
-            for k in 1:S
-                i = S - k + 1
-                s = cfg.σ[i]
-                if has_arc(graph, b, s)
-                    return LeftArc(k, args(s)...)
-                elseif has_arc(graph, s, b)
-                    return RightArc(k, args(b)...)
-                end
+function static_oracle(cfg::ArcSwiftConfig, tree, arc=untyped)
+    l = i -> arc(tree[i])
+    S = length(cfg.σ)
+    if S >= 1 && length(cfg.β) >= 1
+        b = cfg.β[1]
+        for k in 1:S
+            i = S - k + 1
+            s = cfg.σ[i]
+            if has_arc(tree, b, s)
+                return LeftArc(k, l(s)...)
+            elseif has_arc(tree, s, b)
+                return RightArc(k, l(b)...)
             end
         end
-        return Shift()
     end
+    return Shift()
 end
 
 
-import Base.==
 ==(cfg1::ArcSwiftConfig, cfg2::ArcSwiftConfig) =
     cfg1.σ == cfg2.σ && cfg1.β == cfg2.β && cfg1.A == cfg2.A
+
+# TODO
+function possible_transitions(cfg::ArcSwiftConfig, graph::DependencyTree, arc=untyped)
+    TransitionOperator[static_oracle(cfg, graph, arc)]
+end
+
+Base.show(io::IO, c::ArcSwiftConfig) =
+    print(io, "ArcSwiftConfig($(c.σ),$(c.β))\n$(join([join([id(t),form(t),head(t)],'\t') for t in tokens(c)],'\n'))")

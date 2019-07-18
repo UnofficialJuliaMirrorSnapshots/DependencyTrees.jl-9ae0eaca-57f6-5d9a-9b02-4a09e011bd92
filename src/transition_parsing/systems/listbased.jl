@@ -1,5 +1,5 @@
 """
-    ListBasedNonProjective
+    ListBasedNonProjective()
 
 Transition system for list-based non-projective dependency parsing.
 
@@ -43,6 +43,8 @@ end
 ListBasedNonProjectiveConfig(gold::DependencyTree) =
     ListBasedNonProjectiveConfig{eltype(gold)}(gold)
 
+buffer(cfg::ListBasedNonProjectiveConfig) = cfg.β
+
 token(cfg::ListBasedNonProjectiveConfig, i) = iszero(i) ? root(deptype(cfg)) :
                                               i == -1   ? noval(deptype(cfg)) :
                                               cfg.A[i]
@@ -84,36 +86,42 @@ end
 
 
 """
-    static_oracle(::ListBasedNonProjectiveConfig, graph)
+    static_oracle(::ListBasedNonProjectiveConfig, tree)
 
 Return a training oracle function which returns gold transition
 operations from a parser configuration with reference to `graph`.
 """
-function static_oracle(::ListBasedNonProjective, graph::DependencyTree, tr = typed)
-    arc(i) = tr(graph[i])
-
-    function (cfg::ListBasedNonProjectiveConfig)
-        if length(cfg.λ1) >= 1 && length(cfg.β) >= 1
-            i, λ1 = cfg.λ1[end], cfg.λ1[1:end-1]
-            j, β = cfg.β[1], cfg.β[2:end]
-            if !iszero(i) && head(graph, i) == j
-                return LeftArc(arc(i)...)
-            elseif head(graph, j) == i
-                return RightArc(arc(j)...)
-            end
-            j_deps = dependents(graph, j)
-            if (!(any(x -> x < j, j_deps) && j_deps[1] < i)) && !(head(graph, j) < i)
-                return Shift()
-            end
+function static_oracle(cfg::ListBasedNonProjectiveConfig, tree, arc=untyped)
+    l = i -> arc(tree[i])
+    if length(cfg.λ1) >= 1 && length(cfg.β) >= 1
+        i, λ1 = cfg.λ1[end], cfg.λ1[1:end-1]
+        j, β = cfg.β[1], cfg.β[2:end]
+        if !iszero(i) && head(tree, i) == j
+            return LeftArc(l(i)...)
+        elseif head(tree, j) == i
+            return RightArc(l(j)...)
         end
-        if length(cfg.λ1) == 0
+        j_deps = dependents(tree, j)
+        if (!(any(x -> x < j, j_deps) && j_deps[1] < i)) && !(head(tree, j) < i)
             return Shift()
         end
-        return NoArc()
     end
+    if length(cfg.λ1) == 0
+        return Shift()
+    end
+    return NoArc()
 end
 
+# todo?
+possible_transitions(cfg::ListBasedNonProjectiveConfig, graph::DependencyTree, arc=untyped) =
+    TransitionOperator[static_oracle(cfg, graph, arc)]
 
-import Base.==
 ==(cfg1::ListBasedNonProjectiveConfig, cfg2::ListBasedNonProjectiveConfig) =
     cfg1.λ1 == cfg2.λ1 && cfg1.λ2 == cfg2.λ2 && cfg1.β == cfg2.β && cfg1.A == cfg2.A
+
+function Base.show(io::IO, c::ListBasedNonProjectiveConfig)
+    λ1 = join(c.λ1, ",")
+    λ2 = join(c.λ2, ",")
+    β = join(c.β, ",")
+    print(io, "ListBasedNonProjectiveConfig([$λ1],[$λ2],[$β])\n$(join([join([id(t),form(t),head(t)],'\t') for t in tokens(c)],'\n'))")
+end

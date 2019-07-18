@@ -1,3 +1,8 @@
+"""
+    DependencyTree
+
+A natural language sentence annotated with dependency structure.
+"""
 struct DependencyTree{T<:Dependency} <: AbstractGraph{Int}
     graph::SimpleDiGraph
     tokens::Vector{T}
@@ -7,29 +12,20 @@ struct DependencyTree{T<:Dependency} <: AbstractGraph{Int}
 
     function DependencyTree(graph, tokens, mwts, emptytokens, root; check=true, kwargs...)
         g = new{eltype(tokens)}(graph, tokens, mwts, emptytokens, root)
-        check && check_depgraph(g; kwargs...)
+        check && check_tree(g; kwargs...)
         return g
     end
 end
 
 """
-    DependencyTree(T::Type{<:Dependency}, tokens)
+   DependencyTree(T, tokens; add_id=false; kwargs...)
 
-Create a DependencyTree for dependencies of type t with
-nodes `tokens`.
-
-DependencyTree(UntypedDependency, [(\"the\", 2),(\"cat\",3),(\"slept\",0)])
-
-DependencyTree(TypedDependency, [(\"the\", \"DT\", 2),(\"cat\",\"NN\",3),(\"slept\",\"VBD\",0)])
+Make a dependency tree with tokens of type `T` from `tokens`.
 """
 function DependencyTree(T::Type{<:Dependency}, tokens; add_id=false, kwargs...)
     A, mwts, es = T[], MultiWordToken[], EmptyToken[]
-    for (i, token) in enumerate(tokens)
-        if add_id
-            dependency = T(i, token...)
-        else
-            dependency = T(token...)
-        end
+    for (id, token) in enumerate(tokens)
+        add_id ? dependency = T(id, token...) : dependency = T(token...)
         push!(A, dependency)
     end
     DependencyTree(A; mwts=mwts, emptytokens=es, kwargs...)
@@ -65,52 +61,49 @@ function DependencyTree{T}(lines::AbstractVector{S}; add_id=false, kwargs...) wh
     DependencyTree(A; mwts=mwts, emptytokens=emptytokens, kwargs...)
 end
 
-function DependencyTree{T}(lines::String; add_id=false, kwargs...) where T
-    ls = String.(filter(x -> x != "", split(strip(lines), "\n")))
+"""
+    DependencyTree{T}(sentence::String; add_id=false, kwargs...)
+
+Read a dependency tree from `sentence`.
+"""
+function DependencyTree{T}(sentence::String; add_id=false, kwargs...) where T
+    ls = String.(filter(x -> x != "", split(strip(sentence), "\n")))
     DependencyTree{T}(ls; add_id=false, kwargs...)
 end
 
 """
-    check_depgraph(g, check_single_head=true, check_has_root=true, check_projective=false)
+    check_tree(g, check_single_head=true, check_has_root=true, check_projective=false)
 
 Ensure the well-formedness of the dependency graph `g`, throwing an
 error if g is not well-formed.
 """
-function check_depgraph(g::DependencyTree; check_single_head=true, check_has_root=true,
+function check_tree(tree::DependencyTree; check_single_head=true, check_has_root=true,
                         check_projective=false)
-    check_has_root && iszero(g.root) && throw(RootlessGraphError(g))
+    check_has_root && iszero(tree.root) && throw(RootlessGraphError(tree))
     if check_single_head
-        if count(t -> iszero(head(t)), g.tokens) > 1
-            throw(MultipleRootsError(g))
-        end
-        if !is_weakly_connected(g.graph)
-            throw(GraphConnectivityError(g, "dep graphs must be weakly connected"))
-        end
+        !has1root(tree) && throw(MultipleRootsError(tree))
+        !is_weakly_connected(tree.graph) && throw(GraphConnectivityError(tree,"not weakly connected!"))    
     end
-    check_projective && !isprojective(g) && throw(NonProjectiveGraphError(g))
-    for i = 1:length(g)
-        n_inc = length(inneighbors(g.graph, i))
+    check_projective && !isprojective(tree) && throw(NonProjectiveGraphError(tree))
+    for i in 1:length(tree)
+        n_inc = length(inneighbors(tree.graph, i))
         # root node and its dependency on predicate are
         # represented implicitly, so 0 is expected here
-        n_inc == 0 && head(g, i) == 0 ? continue :
-        n_inc != 1 && throw(GraphConnectivityError(g, "node $i should have exactly 1 incoming connection (has $n_inc)"))
+        n_inc == 0 && head(tree, i) == 0 ? continue :
+        n_inc != 1 && throw(GraphConnectivityError(tree, "node $i should have exactly 1 incoming connection (has $n_inc)"))
     end
     return nothing
 end
 
-function isprojective(g::DependencyTree, head::Int, dep::Int)
-    mn, mx = min(head, dep), max(head, dep)
-    for k in min(head, dep):max(head, dep)
-        !has_path(g.graph, head, k) && return false
-    end
-    return true
-end
+has1root(tree::DependencyTree) = count(iszero ∘ head, tokens(tree)) == 1
 
-function isprojective(g::DependencyTree)
+isprojective(tree::DependencyTree) =
     # For every arc (i,l,j) there is a directed path from i to every
     # word k such that min(i,j) < k < max(i,j)
-    return all([isprojective(g, src(edge), dst(edge)) for edge in edges(g.graph)])
-end
+    all(isprojective(tree, src(e), dst(e)) for e in edges(tree.graph))
+
+isprojective(g::DependencyTree, head::Int, dep::Int) =
+    all(k -> has_path(g.graph, head, k), min(head, dep):max(head, dep))
 
 dependents(g::DependencyTree, id::Int) =
     iszero(id) ? [g.root] : outneighbors(g.graph, id)
@@ -153,7 +146,6 @@ function Base.show(io::IO, g::DependencyTree{UntypedDependency})
     print(io,T,join([token(t) for t in g],"\n"))
 end
 
-import Base.==
 ==(g1::DependencyTree, g2::DependencyTree) = all(g1.tokens .== g2.tokens)
 Base.eltype(g::DependencyTree) = eltype(g.tokens)
 Base.getindex(g::DependencyTree, i) = i == 0 ? root(eltype(g)) : g.tokens[i]

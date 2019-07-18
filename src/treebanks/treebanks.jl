@@ -1,40 +1,47 @@
 include("reader.jl")
 
-"""
-    Treebank{T<:Dependency}
-
-A lazily-accessed corpus of dependency trees.
-
-Treebank{CoNLLU}("/path/to/treebank")
-
-Treebank{CoNLLU}(["file1", "file2", ...])
-"""
 struct Treebank{T<:Dependency}
     files::Vector{String}
     add_id::Bool
-    remove_nonprojective::Bool
-    kwargs
+    allow_nonprojective::Bool
+    allow_multiheaded::Bool
 end
 
-function Treebank{T}(file_or_dir::String; pattern = r".", add_id=false,
-                     remove_nonprojective=false, kwargs...) where T
-    if isfile(file_or_dir)
-        Treebank{T}([file_or_dir], add_id, remove_nonprojective, kwargs)
-    elseif isdir(file_or_dir)
+"""
+    Treebank{T}(treebank; pattern=r".", add_ad=false, allow_nonprojective=false,kwargs...) whereT
+
+Create a treebank from a `treebank` directory from files matching `pattern`.
+"""
+function Treebank{T}(treebank::String; pattern = r".", add_id=false,
+                     allow_nonprojective=true, allow_multiheaded=true) where T
+    if isfile(treebank)
+        Treebank{T}([treebank], add_id, allow_nonprojective, allow_multiheaded)
+    elseif isdir(treebank)
         treebank_files = String[]
-        for (root, dirs, files) in walkdir(file_or_dir), file in files
+        for (root, dirs, files) in walkdir(treebank), file in files
             if occursin(pattern, file)
                 push!(treebank_files, joinpath(root, file))
             end
         end
-        Treebank{T}(treebank_files, add_id, remove_nonprojective, kwargs)
+        Treebank{T}(treebank_files, add_id, allow_nonprojective, allow_multiheaded)
     else
-        error("don't know how to read '$file_or_dir' as a treebank")
+        error("Couldn't read '$treebank'")
     end
 end
 
-function Treebank{T}(files::Vector{String}; add_id=false, remove_nonprojective=false, kwargs...) where T
-    Treebank{T}(files, add_id, remove_nonprojective, kwargs)
+"""
+    Treebank{T}(files; add_id=false, allow_nonprojective=false, kwargs...)
+
+Create a treebank from `files`.
+"""
+function Treebank{T}(files::Vector{String}; add_id=false, allow_nonprojective=true, allow_multiheaded=true, kwargs...) where T
+    Treebank{T}(files, add_id, allow_nonprojective, allow_multiheaded)
+end
+
+function Treebank(treebank; kwargs...)
+    endswith(treebank, ".conllu") ? Treebank{CoNLLU}(treebank; kwargs...) :
+        endswith(treebank, "conll") ? Treebank{CoNLLU}(treebank; kwargs...) :
+        error("error reading '$treebank'")
 end
 
 deptype(::Type{<:Treebank{T}}) where T = T
@@ -62,6 +69,12 @@ Base.IteratorSize(treebank::Treebank) = Base.SizeUnknown()
 
 Base.length(treebank::Treebank) = length(collect(treebank))
 
+function Base.show(io::IO, treebank::Treebank)
+    T = deptype(treebank)
+    len = length(treebank.files)
+    print(io, "Treebank{$T} of $len file(s)")
+end
+
 mutable struct TreebankIterator{T}
     t::Treebank{T}
     i::Int
@@ -75,7 +88,7 @@ end
 
 function Base.iterate(t::TreebankIterator)
     graph, state = iterate(t.reader)
-    if t.t.remove_nonprojective && !isprojective(graph)
+    if !t.t.allow_nonprojective && !isprojective(graph)
         return iterate(t, (state, 1))
     end
     return (graph, (state, 1))
@@ -84,14 +97,14 @@ function Base.iterate(t::TreebankIterator, state)
     next = iterate(t.reader, state)
     if next != nothing
         (graph, (st, i)) = next
-        if t.t.remove_nonprojective && !isprojective(graph)
+        if !t.t.allow_nonprojective && !isprojective(graph)
             return iterate(t, (st, i+1))
         end
         return (graph, (st, i+1))
     else
         if t.i < length(t.t.files)
             t.i += 1
-            t.reader = TreebankReader{deptype(t.t)}(t.t.files[t.i])
+            t.reader = TreebankReader{deptype(t.t)}(t.t.files[t.i]; allow_nonprojective=t.t.allow_nonprojective, allow_multiheaded=t.t.allow_multiheaded)
             graph, state = iterate(t.reader)
             return (graph, (state, 1))
         else
